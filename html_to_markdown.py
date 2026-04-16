@@ -11,40 +11,61 @@ import os
 
 
 def convert_table(table):
-    """转换表格为Markdown格式"""
-    rows = []
-    headers = []
-
-    # 获取表头
-    thead = table.find('thead')
-    if thead:
-        for th in thead.find_all(['th', 'td']):
-            headers.append(th.get_text().strip())
-
-    # 获取表格内容
+    """转换表格为Markdown格式，处理colspan和rowspan"""
     tbody = table.find('tbody') or table
-    for tr in tbody.find_all('tr'):
-        row = []
-        for td in tr.find_all(['td', 'th']):
-            row.append(td.get_text().strip())
-        if row:
-            rows.append(row)
-
-    # 如果没有表头但有数据，使用第一行作为表头
-    if not headers and rows:
-        headers = rows[0]
-        rows = rows[1:]
-
-    # 生成 Markdown 表格
-    if not headers:
+    trs = tbody.find_all('tr')
+    if not trs:
         return ""
 
+    num_rows = len(trs)
+    # 用grid直接构建，跳过已被rowspan占用的位置
+    # 先估算列数（两遍扫描）
+    # 第一遍：构建grid，动态扩展列数
+    grid = {}  # (row, col) -> cell_info
+
+    for row_idx, tr in enumerate(trs):
+        col_idx = 0
+        for td in tr.find_all(['td', 'th']):
+            # 跳过已被rowspan占用的列
+            while (row_idx, col_idx) in grid:
+                col_idx += 1
+            colspan = int(td.get('colspan', 1))
+            rowspan = int(td.get('rowspan', 1))
+            text = td.get_text().strip()
+            cell = {'text': text, 'colspan': colspan}
+            for r in range(rowspan):
+                for c in range(colspan):
+                    grid[(row_idx + r, col_idx + c)] = cell
+            col_idx += colspan
+
+    if not grid:
+        return ""
+
+    max_cols = max(c for (_, c) in grid.keys()) + 1
+
+    # 生成最终行
+    result_rows = []
+    for row_idx in range(num_rows):
+        final_row = []
+        col_idx = 0
+        while col_idx < max_cols:
+            cell = grid.get((row_idx, col_idx))
+            if cell:
+                colspan = cell['colspan']
+                final_row.append(cell['text'])
+                for _ in range(colspan - 1):
+                    final_row.append('')
+                col_idx += colspan
+            else:
+                final_row.append('')
+                col_idx += 1
+        result_rows.append(final_row[:max_cols])
+
+    # 生成Markdown表格
     md = []
-    md.append("| " + " | ".join(headers) + " |")
-    md.append("|" + "|".join(["---" for _ in headers]) + "|")
-    for row in rows:
-        # 确保行长度与表头一致
-        row = row + [""] * (len(headers) - len(row)) if len(row) < len(headers) else row[:len(headers)]
+    md.append("| " + " | ".join([""] * max_cols) + " |")
+    md.append("|" + "|".join(["---" for _ in range(max_cols)]) + "|")
+    for row in result_rows:
         md.append("| " + " | ".join(row) + " |")
 
     return "\n".join(md) + "\n"
@@ -174,8 +195,8 @@ def html_to_markdown(html_path, md_path=None):
     with open(md_path, "w", encoding="utf-8") as f:
         f.write(content)
 
-    print(f"✓ 转换完成: {md_path}")
-    print(f"✓ 文件大小: {len(content)} 字符")
+    print(f"[OK] 转换完成: {md_path}")
+    print(f"[OK] 文件大小: {len(content)} 字符")
     return True
 
 
