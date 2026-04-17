@@ -61,11 +61,11 @@ def convert_table(table):
                 col_idx += 1
         result_rows.append(final_row[:max_cols])
 
-    # 生成Markdown表格
+    # 生成Markdown表格（第一行数据作为表头）
     md = []
-    md.append("| " + " | ".join([""] * max_cols) + " |")
+    md.append("| " + " | ".join(result_rows[0]) + " |")
     md.append("|" + "|".join(["---" for _ in range(max_cols)]) + "|")
-    for row in result_rows:
+    for row in result_rows[1:]:
         md.append("| " + " | ".join(row) + " |")
 
     return "\n".join(md) + "\n"
