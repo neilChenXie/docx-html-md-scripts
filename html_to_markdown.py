@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Word HTML 转 Markdown
-处理 Word 另存为 HTML 产生的文件
+HTML 转 Markdown
+支持 WPS/Word 导出 HTML (GB2312/GBK) 和 Pandoc HTML (UTF-8 标准 HTML5)
 """
 
 from bs4 import BeautifulSoup
+import chardet
 import re
 import sys
 import os
@@ -128,6 +129,16 @@ def convert_element(elem):
             result.append(convert_list(child, ordered) + "\n")
         elif child.name == 'div':
             result.append(convert_element(child))
+        elif child.name == 'section':
+            result.append(convert_element(child))
+        elif child.name == 'pre':
+            code_text = child.get_text().rstrip()
+            if code_text:
+                result.append(f"```\n{code_text}\n```\n\n")
+        elif child.name == 'code':
+            text = child.get_text().strip()
+            if text:
+                result.append(f"`{text}`")
         elif child.name == 'span':
             text = convert_element(child)
             if text.strip():
@@ -152,15 +163,21 @@ def html_to_markdown(html_path, md_path=None):
     if md_path is None:
         md_path = html_path.replace('.html', '.md').replace('.htm', '.md')
 
-    # 1. 读取 HTML（尝试多种编码）
     html = None
-    for encoding in ['gb2312', 'gbk', 'utf-8']:
+    encodings = []
+    with open(html_path, "rb") as f:
+        raw = f.read()
+    detected = chardet.detect(raw)
+    if detected and detected['encoding']:
+        encodings.append(detected['encoding'].lower())
+    encodings.extend(['utf-8', 'gb2312', 'gbk', 'gb18030'])
+
+    for enc in encodings:
         try:
-            with open(html_path, "r", encoding=encoding, errors="ignore") as f:
-                html = f.read()
-            print(f"使用编码: {encoding}")
+            html = raw.decode(enc)
+            print(f"使用编码: {enc}")
             break
-        except Exception as e:
+        except (UnicodeDecodeError, LookupError):
             continue
 
     if html is None:
@@ -168,7 +185,7 @@ def html_to_markdown(html_path, md_path=None):
         return False
 
     # 2. 解析并转换
-    soup = BeautifulSoup(html, 'lxml')
+    soup = BeautifulSoup(html, 'html.parser')
 
     # 移除无用标签
     for tag in soup(["script", "style", "meta", "link"]):
