@@ -1,0 +1,245 @@
+#!/usr/bin/env python3
+"""
+HTML 转 Markdown
+支持 WPS/Word 导出 HTML (GB2312/GBK) 和 Pandoc HTML (UTF-8 标准 HTML5)
+"""
+
+from bs4 import BeautifulSoup
+import chardet
+import re
+import sys
+import os
+
+
+def get_cell_text(td):
+    items = td.find_all('li')
+    if items:
+        sep = 'Ø '
+        return sep + sep.join(li.get_text().strip() for li in items)
+    text = td.get_text(separator=' ').strip()
+    text = re.sub(r'\s+', ' ', text)
+    return text
+
+def convert_table(table):
+    """转换表格为Markdown格式，处理colspan和rowspan"""
+    tbody = table.find('tbody') or table
+    trs = tbody.find_all('tr')
+    if not trs:
+        return ""
+
+    num_rows = len(trs)
+    # 用grid直接构建，跳过已被rowspan占用的位置
+    # 先估算列数（两遍扫描）
+    # 第一遍：构建grid，动态扩展列数
+    grid = {}  # (row, col) -> cell_info
+
+    for row_idx, tr in enumerate(trs):
+        col_idx = 0
+        for td in tr.find_all(['td', 'th']):
+            # 跳过已被rowspan占用的列
+            while (row_idx, col_idx) in grid:
+                col_idx += 1
+            colspan = int(td.get('colspan', 1))
+            rowspan = int(td.get('rowspan', 1))
+            text = get_cell_text(td)
+            cell = {'text': text, 'colspan': colspan}
+            for r in range(rowspan):
+                for c in range(colspan):
+                    grid[(row_idx + r, col_idx + c)] = cell
+            col_idx += colspan
+
+    if not grid:
+        return ""
+
+    max_cols = max(c for (_, c) in grid.keys()) + 1
+
+    # 生成最终行
+    result_rows = []
+    for row_idx in range(num_rows):
+        final_row = []
+        col_idx = 0
+        while col_idx < max_cols:
+            cell = grid.get((row_idx, col_idx))
+            if cell:
+                colspan = cell['colspan']
+                final_row.append(cell['text'])
+                for _ in range(colspan - 1):
+                    final_row.append('')
+                col_idx += colspan
+            else:
+                final_row.append('')
+                col_idx += 1
+        result_rows.append(final_row[:max_cols])
+
+    # 生成Markdown表格（第一行数据作为表头）
+    md = []
+    md.append("| " + " | ".join(result_rows[0]) + " |")
+    md.append("|" + "|".join(["---" for _ in range(max_cols)]) + "|")
+    for row in result_rows[1:]:
+        md.append("| " + " | ".join(row) + " |")
+
+    return "\n".join(md) + "\n"
+
+
+def convert_list(lst, ordered=False, level=0):
+    result = []
+    items = lst.find_all('li', recursive=False)
+    for i, item in enumerate(items):
+        indent = "  " * level
+        if ordered:
+            prefix = f"{indent}{i+1})"
+        else:
+            prefix = "Ø"
+        text = item.get_text().strip()
+        result.append(prefix + text)
+    sep = chr(10) * 2
+    return sep.join(result) + chr(10)
+
+
+def convert_element(elem):
+    """递归转换HTML元素"""
+    result = []
+    for child in elem.children:
+        if child.name is None:
+            text = " ".join(str(child).split())
+            if text:
+                result.append(text)
+        elif child.name == 'p':
+            # 段落之间增加空行（两个换行符）
+            para_text = convert_element(child).strip()
+            if para_text:
+                result.append(para_text + "\n\n")
+        elif child.name == 'br':
+            result.append(" ")
+        elif child.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
+            num_span = child.find('span', class_='header-section-number')
+            if num_span:
+                number = num_span.get_text().strip()
+                num_span.decompose()
+                title = child.get_text().strip()
+                result.append(f"{number} **{title}**\n\n")
+            else:
+                level = int(child.name[1])
+                text = child.get_text().strip()
+                result.append("#" * level + " " + text + "\n\n")
+        elif child.name in ['b', 'strong']:
+            text = child.get_text().strip()
+            if text:
+                result.append(f"**{text}**")
+        elif child.name in ['i', 'em']:
+            text = child.get_text().strip()
+            if text:
+                result.append(f"*{text}*")
+        elif child.name == 'table':
+            # 表格后增加空行
+            result.append(convert_table(child) + "\n")
+        elif child.name in ['ul', 'ol']:
+            ordered = child.name == 'ol'
+            # 列表后增加空行
+            result.append(convert_list(child, ordered) + "\n")
+        elif child.name == 'div':
+            result.append(convert_element(child))
+        elif child.name == 'section':
+            result.append(convert_element(child))
+        elif child.name == 'pre':
+            code_text = child.get_text().rstrip()
+            if code_text:
+                result.append(f"```\n{code_text}\n```\n\n")
+        elif child.name == 'code':
+            text = child.get_text().strip()
+            if text:
+                result.append(f"`{text}`")
+        elif child.name == 'span':
+            text = convert_element(child)
+            if text.strip():
+                result.append(text)
+        else:
+            result.append(convert_element(child))
+    return "".join(result)
+
+
+def html_to_markdown(html_path, md_path=None):
+    """
+    将 Word 导出的 HTML 文件转换为 Markdown
+
+    Args:
+        html_path: HTML 文件路径
+        md_path: 输出 Markdown 路径，默认为同名 .md 文件
+    """
+    if not os.path.exists(html_path):
+        print(f"错误: 文件不存在: {html_path}")
+        return False
+
+    if md_path is None:
+        md_path = html_path.replace('.html', '.md').replace('.htm', '.md')
+
+    html = None
+    encodings = []
+    with open(html_path, "rb") as f:
+        raw = f.read()
+    detected = chardet.detect(raw)
+    if detected and detected['encoding']:
+        encodings.append(detected['encoding'].lower())
+    encodings.extend(['utf-8', 'gb2312', 'gbk', 'gb18030'])
+
+    for enc in encodings:
+        try:
+            html = raw.decode(enc)
+            print(f"使用编码: {enc}")
+            break
+        except (UnicodeDecodeError, LookupError):
+            continue
+
+    if html is None:
+        print("错误: 无法读取文件，编码不支持")
+        return False
+
+    # 2. 解析并转换
+    soup = BeautifulSoup(html, 'html.parser')
+
+    # 移除无用标签
+    for tag in soup(["script", "style", "meta", "link"]):
+        tag.decompose()
+
+    # 3. 执行转换
+    body = soup.find('body')
+    content = convert_element(body) if body else convert_element(soup)
+
+    # 4. 清理 Word 标记
+    content = re.sub(r'\[if !supportLists\]', '', content)
+    content = re.sub(r'\[endif\]', '', content)
+    content = re.sub(r'StartFragment|EndFragment', '', content)
+    # 修复标题格式（编号与加粗之间加空格）
+    content = re.sub(r'^(\d+(?:\.\d+)*)(\*\*)', r'\1 \2', content, flags=re.MULTILINE)
+    # 清理空的加粗标记 ****
+    content = re.sub(r'\*\*\*\*', '', content)
+    # 清理多余空行（保留段落间的单个空行，但清理超过两个的连续空行）
+    content = re.sub(r'\n{3,}', '\n\n', content)
+    # 清理行首行尾空白
+    content = '\n'.join(line.rstrip() for line in content.split('\n'))
+
+    # 5. 保存
+    with open(md_path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    print(f"[OK] 转换完成: {md_path}")
+    print(f"[OK] 文件大小: {len(content)} 字符")
+    return True
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("用法: python html_to_markdown.py <html文件路径> [输出md文件路径]")
+        print("示例: python html_to_markdown.py document.html")
+        print("      python html_to_markdown.py document.html output.md")
+        sys.exit(1)
+
+    html_path = sys.argv[1]
+    md_path = sys.argv[2] if len(sys.argv) > 2 else None
+
+    success = html_to_markdown(html_path, md_path)
+    sys.exit(0 if success else 1)
+
+
+if __name__ == '__main__':
+    main()
