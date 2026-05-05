@@ -11,6 +11,24 @@ import sys
 import os
 
 
+def _td_content(td):
+    """提取td/th内容，保留文本和图片引用"""
+    parts = []
+    for child in td.descendants:
+        if child.name == 'img':
+            src = child.get('src', '')
+            alt = child.get('alt', '').strip()
+            if src:
+                if not alt:
+                    alt = os.path.basename(src)
+                parts.append(f"![{alt}]({src})")
+        elif child.name is None:
+            text = str(child).strip()
+            if text:
+                parts.append(text)
+    return ' '.join(parts).strip()
+
+
 def convert_table(table):
     """转换表格为Markdown格式，处理colspan和rowspan"""
     tbody = table.find('tbody') or table
@@ -19,20 +37,16 @@ def convert_table(table):
         return ""
 
     num_rows = len(trs)
-    # 用grid直接构建，跳过已被rowspan占用的位置
-    # 先估算列数（两遍扫描）
-    # 第一遍：构建grid，动态扩展列数
     grid = {}  # (row, col) -> cell_info
 
     for row_idx, tr in enumerate(trs):
         col_idx = 0
         for td in tr.find_all(['td', 'th']):
-            # 跳过已被rowspan占用的列
             while (row_idx, col_idx) in grid:
                 col_idx += 1
             colspan = int(td.get('colspan', 1))
             rowspan = int(td.get('rowspan', 1))
-            text = td.get_text().strip()
+            text = _td_content(td)
             cell = {'text': text, 'colspan': colspan}
             for r in range(rowspan):
                 for c in range(colspan):
@@ -139,6 +153,13 @@ def convert_element(elem):
             text = child.get_text().strip()
             if text:
                 result.append(f"`{text}`")
+        elif child.name == 'img':
+            src = child.get('src', '')
+            alt = child.get('alt', '').strip()
+            if src:
+                if not alt:
+                    alt = os.path.basename(src)
+                result.append(f"![{alt}]({src})\n")
         elif child.name == 'span':
             text = convert_element(child)
             if text.strip():
