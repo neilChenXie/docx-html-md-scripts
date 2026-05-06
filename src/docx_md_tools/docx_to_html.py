@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-#
-# Convert Word document (.docx) to HTML format
-#
-# Uses pandoc Python package (pypandoc) instead of command-line tool.
-#
-# Usage:
-#   python docx_to_html_py.py <input.docx> [output.html]
 
 import os
 import sys
@@ -13,25 +6,30 @@ import sys
 import pypandoc
 
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python docx_to_html_py.py <input.docx> [output.html]")
-        print("Example: python docx_to_html_py.py document.docx")
-        print("         python docx_to_html_py.py document.docx output.html")
-        sys.exit(1)
+def docx_to_html(input_file, output_file=""):
+    """
+    Convert Word document (.docx) to HTML format using pypandoc.
 
-    input_file = sys.argv[1]
-    output_file = sys.argv[2] if len(sys.argv) >= 3 else ""
+    Args:
+        input_file: Path to the .docx input file
+        output_file: Path to the .html output file. If empty, defaults to
+                     same name as input file with .html extension, placed
+                     in the same directory.
 
+    Returns:
+        output_file path on success
+
+    Raises:
+        FileNotFoundError: If input_file does not exist
+        ValueError: If input_file does not have .docx extension
+    """
     if not os.path.isfile(input_file):
-        print(f"Error: File not found: {input_file}")
-        sys.exit(1)
+        raise FileNotFoundError(f"File not found: {input_file}")
 
     input_file = os.path.realpath(input_file)
 
     if not input_file.lower().endswith(".docx"):
-        print(f"Error: Input file must have .docx extension: {input_file}")
-        sys.exit(1)
+        raise ValueError(f"Input file must have .docx extension: {input_file}")
 
     input_dir = os.path.dirname(input_file)
     input_basename = os.path.splitext(os.path.basename(input_file))[0]
@@ -75,6 +73,24 @@ def main():
         print(f"[OK] Output: {output_file}")
         print(f"[OK] Size: {file_size} bytes")
         print("=" * 40)
+
+    return output_file
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: python docx_to_html_py.py <input.docx> [output.html]")
+        print("Example: python docx_to_html_py.py document.docx")
+        print("         python docx_to_html_py.py document.docx output.html")
+        sys.exit(1)
+
+    try:
+        input_file = sys.argv[1]
+        output_file = sys.argv[2] if len(sys.argv) >= 3 else ""
+        docx_to_html(input_file, output_file)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

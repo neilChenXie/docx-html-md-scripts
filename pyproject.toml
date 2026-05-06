@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "docx-md-tools"
+version = "0.1.0"
+description = "Document format conversion tools: docx ↔ html ↔ markdown"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "docx-html-md-scripts contributors"},
+]
+keywords = ["docx", "html", "markdown", "converter", "word"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Text Processing :: Markup",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "beautifulsoup4>=4.12.0",
+    "chardet>=5.0.0",
+    "lxml>=4.9.0",
+    "pypandoc>=1.14",
+    "python-docx>=1.1.0",
+]
+
+[project.scripts]
+docx2html = "docx_md_tools.docx_to_html:main"
+html2md   = "docx_md_tools.html_to_markdown:main"
+md2docx   = "docx_md_tools.md_to_docx:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/docx_md_tools"]

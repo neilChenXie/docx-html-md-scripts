@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-HTML 转 Markdown
-支持 WPS/Word 导出 HTML (GB2312/GBK) 和 Pandoc HTML (UTF-8 标准 HTML5)
+HTML to Markdown converter.
+Supports WPS/Word HTML exports (GB2312/GBK) and Pandoc HTML (UTF-8 standard HTML5).
 """
 
 from bs4 import BeautifulSoup
@@ -12,7 +12,6 @@ import os
 
 
 def _td_content(td):
-    """提取td/th内容，保留文本和图片引用"""
     parts = []
     for child in td.descendants:
         if child.name == 'img':
@@ -30,14 +29,13 @@ def _td_content(td):
 
 
 def convert_table(table):
-    """转换表格为Markdown格式，处理colspan和rowspan"""
     tbody = table.find('tbody') or table
     trs = tbody.find_all('tr')
     if not trs:
         return ""
 
     num_rows = len(trs)
-    grid = {}  # (row, col) -> cell_info
+    grid = {}
 
     for row_idx, tr in enumerate(trs):
         col_idx = 0
@@ -58,7 +56,6 @@ def convert_table(table):
 
     max_cols = max(c for (_, c) in grid.keys()) + 1
 
-    # 生成最终行
     result_rows = []
     for row_idx in range(num_rows):
         final_row = []
@@ -76,7 +73,6 @@ def convert_table(table):
                 col_idx += 1
         result_rows.append(final_row[:max_cols])
 
-    # 生成Markdown表格（第一行数据作为表头）
     md = []
     md.append("| " + " | ".join(result_rows[0]) + " |")
     md.append("|" + "|".join(["---" for _ in range(max_cols)]) + "|")
@@ -87,7 +83,6 @@ def convert_table(table):
 
 
 def convert_list(lst, ordered=False, level=0):
-    """转换列表为Markdown格式"""
     result = []
     items = lst.find_all('li', recursive=False)
 
@@ -98,7 +93,6 @@ def convert_list(lst, ordered=False, level=0):
         else:
             prefix = f"{indent}- "
 
-        # 处理列表项内容
         text = item.get_text().strip()
         if text:
             result.append(prefix + text)
@@ -107,7 +101,6 @@ def convert_list(lst, ordered=False, level=0):
 
 
 def convert_element(elem):
-    """递归转换HTML元素"""
     result = []
     for child in elem.children:
         if child.name is None:
@@ -115,7 +108,6 @@ def convert_element(elem):
             if text:
                 result.append(text)
         elif child.name == 'p':
-            # 段落之间增加空行（两个换行符）
             para_text = convert_element(child).strip()
             if para_text:
                 result.append(para_text + "\n\n")
@@ -124,7 +116,6 @@ def convert_element(elem):
         elif child.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
             level = int(child.name[1])
             text = child.get_text().strip()
-            # 标题后增加空行
             result.append("#" * level + " " + text + "\n\n")
         elif child.name in ['b', 'strong']:
             text = child.get_text().strip()
@@ -135,11 +126,9 @@ def convert_element(elem):
             if text:
                 result.append(f"*{text}*")
         elif child.name == 'table':
-            # 表格后增加空行
             result.append(convert_table(child) + "\n")
         elif child.name in ['ul', 'ol']:
             ordered = child.name == 'ol'
-            # 列表后增加空行
             result.append(convert_list(child, ordered) + "\n")
         elif child.name == 'div':
             result.append(convert_element(child))
@@ -171,15 +160,19 @@ def convert_element(elem):
 
 def html_to_markdown(html_path, md_path=None):
     """
-    将 Word 导出的 HTML 文件转换为 Markdown
+    Convert an HTML file exported from Word to Markdown.
 
     Args:
-        html_path: HTML 文件路径
-        md_path: 输出 Markdown 路径，默认为同名 .md 文件
+        html_path: Path to the HTML input file
+        md_path:   Path to the Markdown output file. If None, defaults to
+                   replacing .html/.htm extension with .md.
+
+    Returns:
+        md_path on success, None on failure
     """
     if not os.path.exists(html_path):
-        print(f"错误: 文件不存在: {html_path}")
-        return False
+        print(f"Error: File not found: {html_path}")
+        return None
 
     if md_path is None:
         md_path = html_path.replace('.html', '.md').replace('.htm', '.md')
@@ -196,60 +189,51 @@ def html_to_markdown(html_path, md_path=None):
     for enc in encodings:
         try:
             html = raw.decode(enc)
-            print(f"使用编码: {enc}")
+            print(f"Using encoding: {enc}")
             break
         except (UnicodeDecodeError, LookupError):
             continue
 
     if html is None:
-        print("错误: 无法读取文件，编码不支持")
-        return False
+        print("Error: Unable to read file, encoding not supported")
+        return None
 
-    # 2. 解析并转换
     soup = BeautifulSoup(html, 'html.parser')
 
-    # 移除无用标签
     for tag in soup(["script", "style", "meta", "link"]):
         tag.decompose()
 
-    # 3. 执行转换
     body = soup.find('body')
     content = convert_element(body) if body else convert_element(soup)
 
-    # 4. 清理 Word 标记
     content = re.sub(r'\[if !supportLists\]', '', content)
     content = re.sub(r'\[endif\]', '', content)
     content = re.sub(r'StartFragment|EndFragment', '', content)
-    # 修复标题格式（编号与加粗之间加空格）
     content = re.sub(r'^(\d+(?:\.\d+)*)(\*\*)', r'\1 \2', content, flags=re.MULTILINE)
-    # 清理空的加粗标记 ****
     content = re.sub(r'\*\*\*\*', '', content)
-    # 清理多余空行（保留段落间的单个空行，但清理超过两个的连续空行）
     content = re.sub(r'\n{5,}', '\n\n\n\n', content)
-    # 清理行首行尾空白
     content = '\n'.join(line.rstrip() for line in content.split('\n'))
 
-    # 5. 保存
     with open(md_path, "w", encoding="utf-8") as f:
         f.write(content)
 
-    print(f"[OK] 转换完成: {md_path}")
-    print(f"[OK] 文件大小: {len(content)} 字符")
-    return True
+    print(f"[OK] Conversion complete: {md_path}")
+    print(f"[OK] File size: {len(content)} characters")
+    return md_path
 
 
 def main():
     if len(sys.argv) < 2:
-        print("用法: python html_to_markdown.py <html文件路径> [输出md文件路径]")
-        print("示例: python html_to_markdown.py document.html")
+        print("Usage: python html_to_markdown.py <html_file> [output_md_file]")
+        print("Example: python html_to_markdown.py document.html")
         print("      python html_to_markdown.py document.html output.md")
         sys.exit(1)
 
     html_path = sys.argv[1]
     md_path = sys.argv[2] if len(sys.argv) > 2 else None
 
-    success = html_to_markdown(html_path, md_path)
-    sys.exit(0 if success else 1)
+    result = html_to_markdown(html_path, md_path)
+    sys.exit(0 if result else 1)
 
 
 if __name__ == '__main__':
