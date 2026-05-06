@@ -69,11 +69,10 @@ def convert_table_to_docx(doc, table_lines):
         row_cells = table.rows[row_idx + 1].cells
         for col_idx, cell_text in enumerate(row_data):
             if col_idx < len(row_cells):
-                row_cells[col_idx].text = cell_text
+                process_cell_formatting(row_cells[col_idx], cell_text)
 
 def process_inline_formatting(paragraph, text):
     """处理行内格式（加粗等）"""
-    # 处理加粗 **text**
     parts = re.split(r'(\*\*[^*]+\*\*)', text)
     for part in parts:
         run = paragraph.add_run()
@@ -83,6 +82,27 @@ def process_inline_formatting(paragraph, text):
         else:
             run.text = part
         set_chinese_font(run, 'SimSun', 12)
+
+def process_cell_formatting(cell, text, font_name='SimSun', font_size=10):
+    """处理表格单元格内的Markdown格式（加粗、换行等）"""
+    p = cell.paragraphs[0]
+    p.clear()
+
+    segments = text.split('<br>')
+
+    for seg_idx, segment in enumerate(segments):
+        if seg_idx > 0:
+            p = cell.add_paragraph()
+
+        parts = re.split(r'(\*\*[^*]+\*\*)', segment)
+        for part in parts:
+            run = p.add_run()
+            if part.startswith('**') and part.endswith('**'):
+                run.text = part[2:-2]
+                run.bold = True
+            else:
+                run.text = part
+            set_chinese_font(run, font_name, font_size)
 
 def markdown_to_docx(input_file, output_file):
     """将Markdown文件转换为DOCX"""
