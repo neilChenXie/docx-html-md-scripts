@@ -34,9 +34,10 @@ dependencies = [
 ]
 
 [project.scripts]
-docx2html = "docx_md_tools.docx_to_html:main"
-html2md   = "docx_md_tools.html_to_markdown:main"
-md2docx   = "docx_md_tools.md_to_docx:main"
+docx2html     = "docx_md_tools.py_docx_to_html:main"
+docx2html-win = "docx_md_tools.py_docx_to_html:win_main"
+html2md       = "docx_md_tools.py_html_to_markdown:main"
+md2docx       = "docx_md_tools.md_to_docx:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/docx_md_tools"]
