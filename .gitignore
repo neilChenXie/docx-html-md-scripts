@@ -1,3 +1,7 @@
+#本项目
+.tmp/
+
+
 # Mac_OS
 .DS_Store
 .Spotlight-V100
